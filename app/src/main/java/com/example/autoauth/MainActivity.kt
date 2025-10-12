@@ -106,7 +106,8 @@ class MainActivity : AppCompatActivity() {
                 prefs.edit().putBoolean("service_running", running).apply()
             }
         }
-        registerReceiver(statusReceiver, statusFilter)
+        // Android 14+ (targetSdk >= 34) requires specifying export state
+        registerReceiver(statusReceiver, statusFilter, Context.RECEIVER_NOT_EXPORTED)
 
         // Boot auto-start toggle
         switchBoot.isChecked = prefs.getBoolean("boot_autostart", true)
@@ -137,4 +138,3 @@ private class SimpleTextWatcher(val onChanged: (String) -> Unit) : android.text.
     override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
     override fun afterTextChanged(s: android.text.Editable?) { onChanged(s?.toString().orEmpty()) }
 }
-

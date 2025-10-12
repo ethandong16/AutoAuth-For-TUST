@@ -5,12 +5,12 @@ plugins {
 
 android {
     namespace = "com.example.autoauth"
-    compileSdk = 36
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.example.autoauth"
         minSdk = 33
-        targetSdk = 36
+        targetSdk = 35
         versionCode = 1
         versionName = "1.0"
 

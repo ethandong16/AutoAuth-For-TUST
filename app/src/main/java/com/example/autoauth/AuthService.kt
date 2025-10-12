@@ -162,7 +162,8 @@ class AuthService : Service() {
             .setSmallIcon(android.R.drawable.stat_notify_sync)
             .setContentIntent(pi)
             .setOngoing(true)
-            .addAction(0, "停止", stopPi)
+            // Android 14/15 can crash if action icon is 0
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "停止", stopPi)
             .build()
     }
 
