@@ -1,19 +1,21 @@
 package com.example.autoauth
 
+import android.Manifest
+import android.content.*
+import android.os.Build
 import android.os.Bundle
 import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import java.io.BufferedReader
-import java.io.InputStreamReader
-import java.net.*
-import java.util.concurrent.Executors
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
+import java.net.URLEncoder
 
 class MainActivity : AppCompatActivity() {
 
-    private val ioExecutor = Executors.newSingleThreadExecutor()
+    private var statusReceiver: BroadcastReceiver? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -23,159 +25,116 @@ class MainActivity : AppCompatActivity() {
         val etPassword = findViewById<EditText>(R.id.etPassword)
         val tvIPv4 = findViewById<TextView>(R.id.tvIPv4)
         val tvIPv6 = findViewById<TextView>(R.id.tvIPv6)
+        val tvNetStatus = findViewById<TextView>(R.id.tvNetStatus)
         val tvResult = findViewById<TextView>(R.id.tvResult)
-        val btnSend = findViewById<Button>(R.id.btnSend)
+        val btnStart = findViewById<Button>(R.id.btnStart)
+        val btnStop = findViewById<Button>(R.id.btnStop)
+        val btnViewLogs = findViewById<Button>(R.id.btnViewLogs)
+        val switchBoot = findViewById<android.widget.Switch>(R.id.switchBoot)
 
-        val ipv4 = getIPv4Address() ?: ""
-        val selectedIPv6 = selectIPv6Address()
+        // Show current IPs
+        val ipv4 = NetUtil.getIPv4Address() ?: ""
+        val selectedIPv6 = NetUtil.selectIPv6Address()
         val ipv6Raw = selectedIPv6?.hostAddress?.substringBefore('%') ?: ""
-        val ipv6Encoded = formatIPv6ForURL(selectedIPv6)
-
+        val ipv6Encoded = NetUtil.formatIPv6ForURL(selectedIPv6)
         tvIPv4.text = "IPv4: $ipv4"
         tvIPv6.text = "IPv6: $ipv6Raw (编码后: $ipv6Encoded)"
 
-        btnSend.setOnClickListener {
+        // Load saved credentials
+        val prefs = getSharedPreferences("autoauth_prefs", Context.MODE_PRIVATE)
+        etAccount.setText(prefs.getString("account", ""))
+        etPassword.setText(prefs.getString("password", ""))
+
+        // Auto-save on change
+        val watcher = { key: String, value: String ->
+            prefs.edit().putString(key, value).apply()
+        }
+        etAccount.addTextChangedListener(SimpleTextWatcher { watcher("account", it) })
+        etPassword.addTextChangedListener(SimpleTextWatcher { watcher("password", it) })
+
+        // Start service
+        btnStart.setOnClickListener {
             val account = etAccount.text?.toString()?.trim().orEmpty()
             val password = etPassword.text?.toString()?.trim().orEmpty()
-
             if (account.isEmpty() || password.isEmpty()) {
                 Toast.makeText(this, "请输入账号和密码", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
 
-            val encodedAccount = try {
-                URLEncoder.encode(account, "UTF-8")
-            } catch (e: Exception) { account }
+            // Save once more
+            prefs.edit().putString("account", account).putString("password", password).apply()
 
-            val encodedPassword = try {
-                URLEncoder.encode(password, "UTF-8")
-            } catch (e: Exception) { password }
-
-            val finalUrl = buildLoginUrl(
-                accountEncoded = encodedAccount,
-                passwordEncoded = encodedPassword,
-                ipv4 = ipv4,
-                ipv6Encoded = ipv6Encoded
-            )
-
-            tvResult.text = "请求 URL:\n$finalUrl"
-
-            ioExecutor.execute {
-                val result = performGet(finalUrl)
-                runOnUiThread {
-                    tvResult.text = "请求 URL:\n$finalUrl\n\n结果:\n$result"
+            // Request notification permission on Android 13+
+            if (Build.VERSION.SDK_INT >= 33) {
+                if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                    != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1001)
+                    return@setOnClickListener
                 }
+            }
+
+            val i = Intent(this, AuthService::class.java)
+            ContextCompat.startForegroundService(this, i)
+            Toast.makeText(this, "已启动后台任务", Toast.LENGTH_SHORT).show()
+        }
+
+        // Stop service
+        btnStop.setOnClickListener {
+            val i = Intent(this, AuthService::class.java)
+            stopService(i)
+            Toast.makeText(this, "已停止后台任务", Toast.LENGTH_SHORT).show()
+        }
+
+        btnViewLogs.setOnClickListener {
+            startActivity(Intent(this, LogActivity::class.java))
+        }
+
+        // Service status updates
+        val statusFilter = IntentFilter("com.example.autoauth.STATUS")
+        statusReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                if (intent == null) return
+                val net = intent.getStringExtra("networkStatus")
+                val url = intent.getStringExtra("lastUrl")
+                val summary = intent.getStringExtra("lastSummary")
+                val running = intent.getBooleanExtra("serviceRunning", false)
+                tvNetStatus.text = "网络状态: ${net ?: "未知"}"
+                tvResult.text = buildString {
+                    if (!url.isNullOrEmpty()) append("最近请求: \n").append(url).append('\n')
+                    if (!summary.isNullOrEmpty()) append("结果: \n").append(summary)
+                }
+                prefs.edit().putBoolean("service_running", running).apply()
             }
         }
-    }
+        registerReceiver(statusReceiver, statusFilter)
 
-    private fun buildLoginUrl(
-        accountEncoded: String,
-        passwordEncoded: String,
-        ipv4: String,
-        ipv6Encoded: String
-    ): String {
-        val base = "http://10.10.102.50:801/eportal/portal/login"
-        val sb = StringBuilder(base)
-        sb.append("?callback=dr1005")
-        sb.append("&login_method=1")
-        sb.append("&user_account=%2C0%2C").append(accountEncoded).append("%40unicom")
-        sb.append("&user_password=").append(passwordEncoded)
-        sb.append("&wlan_user_ip=").append(ipv4)
-        sb.append("&wlan_user_ipv6=").append(ipv6Encoded)
-        sb.append("&wlan_user_mac=000000000000")
-        sb.append("&wlan_ac_ip=")
-        sb.append("&wlan_ac_name=")
-        sb.append("&jsVersion=4.1.3")
-        sb.append("&terminal_type=1")
-        return sb.toString()
-    }
-
-    private fun performGet(urlStr: String): String {
-        return try {
-            val url = URL(urlStr)
-            val conn = (url.openConnection() as HttpURLConnection).apply {
-                requestMethod = "GET"
-                connectTimeout = 10000
-                readTimeout = 10000
-            }
-            val code = conn.responseCode
-            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-            val body = stream?.use { s ->
-                BufferedReader(InputStreamReader(s)).use { br ->
-                    buildString {
-                        var line: String?
-                        var count = 0
-                        while (br.readLine().also { line = it } != null && count < 2000) {
-                            append(line).append('\n')
-                            count += line!!.length
-                        }
-                    }
-                }
-            } ?: ""
-            "HTTP $code\n" + body
-        } catch (e: Exception) {
-            "请求失败: ${e.message}"
+        // Boot auto-start toggle
+        switchBoot.isChecked = prefs.getBoolean("boot_autostart", true)
+        switchBoot.setOnCheckedChangeListener { _, isChecked ->
+            prefs.edit().putBoolean("boot_autostart", isChecked).apply()
+            Toast.makeText(this, if (isChecked) "已开启开机自启" else "已关闭开机自启", Toast.LENGTH_SHORT).show()
         }
+
+        // Immediately build and show current URL (for reference)
+        val accountEncoded = try { URLEncoder.encode(etAccount.text.toString(), "UTF-8") } catch (_: Exception) { etAccount.text.toString() }
+        val passwordEncoded = try { URLEncoder.encode(etPassword.text.toString(), "UTF-8") } catch (_: Exception) { etPassword.text.toString() }
+        val previewUrl = NetUtil.buildLoginUrl(accountEncoded, passwordEncoded, ipv4, ipv6Encoded)
+        tvResult.text = "当前 URL 预览:\n$previewUrl"
     }
 
-    private fun getIPv4Address(): String? {
-        try {
-            val interfaces = NetworkInterface.getNetworkInterfaces() ?: return null
-            while (interfaces.hasMoreElements()) {
-                val intf = interfaces.nextElement()
-                if (!intf.isUp || intf.isLoopback) continue
-                val addrs = intf.inetAddresses
-                while (addrs.hasMoreElements()) {
-                    val addr = addrs.nextElement()
-                    if (addr is Inet4Address && !addr.isLoopbackAddress) {
-                        return addr.hostAddress
-                    }
-                }
-            }
-        } catch (_: Exception) { }
-        return null
-    }
-
-    private fun selectIPv6Address(): Inet6Address? {
-        var linkLocalFallback: Inet6Address? = null
-        try {
-            val interfaces = NetworkInterface.getNetworkInterfaces() ?: return null
-            while (interfaces.hasMoreElements()) {
-                val intf = interfaces.nextElement()
-                if (!intf.isUp || intf.isLoopback) continue
-                val addrs = intf.inetAddresses
-                while (addrs.hasMoreElements()) {
-                    val addr = addrs.nextElement()
-                    if (addr is Inet6Address) {
-                        if (addr.isLoopbackAddress) continue
-                        if (addr.isAnyLocalAddress) continue
-                        if (addr.isMulticastAddress) continue
-                        if (addr.isLinkLocalAddress) {
-                            if (linkLocalFallback == null) linkLocalFallback = addr
-                        } else {
-                            return addr // Prefer global/ULA
-                        }
-                    }
-                }
-            }
-        } catch (_: Exception) { }
-        return linkLocalFallback
-    }
-
-    // Replicates the provided Go logic: expand to 8 groups of 4 hex digits (lowercase), then replace ':' with '%3A'
-    private fun formatIPv6ForURL(addr: Inet6Address?): String {
-        if (addr == null) return ""
-        val b = addr.address ?: return ""
-        if (b.size != 16) return ""
-        val parts = ArrayList<String>(8)
-        var i = 0
-        while (i < 16) {
-            val hi = b[i].toInt() and 0xff
-            val lo = b[i + 1].toInt() and 0xff
-            parts.add(String.format("%02x%02x", hi, lo))
-            i += 2
+    override fun onDestroy() {
+        super.onDestroy()
+        if (statusReceiver != null) {
+            unregisterReceiver(statusReceiver)
+            statusReceiver = null
         }
-        return parts.joinToString(":").replace(":", "%3A")
     }
 }
+
+// SimpleTextWatcher
+private class SimpleTextWatcher(val onChanged: (String) -> Unit) : android.text.TextWatcher {
+    override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+    override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+    override fun afterTextChanged(s: android.text.Editable?) { onChanged(s?.toString().orEmpty()) }
+}
+

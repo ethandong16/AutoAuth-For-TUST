@@ -10,6 +10,16 @@
         android:padding="16dp">
 
         <TextView
+            android:id="@+id/tvAuthor"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Author: Ethan Dong (YiMing Dong)"
+            android:textSize="10sp"
+            android:textColor="#888888"
+            android:gravity="end"
+            android:layout_marginBottom="8dp" />
+
+        <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="账号 (account)"
@@ -52,12 +62,41 @@
             android:text="IPv6:"
             android:textIsSelectable="true" />
 
+        <Switch
+            android:id="@+id/switchBoot"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="开机自启" />
+
+        <TextView
+            android:id="@+id/tvNetStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="网络状态: 未知"
+            android:textIsSelectable="false" />
+
         <Button
-            android:id="@+id/btnSend"
+            android:id="@+id/btnStart"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="24dp"
-            android:text="发送 GET" />
+            android:text="启动" />
+
+        <Button
+            android:id="@+id/btnStop"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="停止" />
+
+        <Button
+            android:id="@+id/btnViewLogs"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="查看日志" />
 
         <TextView
             android:id="@+id/tvResult"
@@ -67,6 +106,7 @@
             android:textSize="14sp"
             android:textColor="#333333" />
 
+        
+
     </LinearLayout>
 </ScrollView>
-
