@@ -12,6 +12,8 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import java.net.URLEncoder
+import android.view.Menu
+import android.view.MenuItem
 
 class MainActivity : AppCompatActivity() {
 
@@ -20,6 +22,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        supportActionBar?.subtitle = getString(R.string.app_name_full)
 
         val etAccount = findViewById<EditText>(R.id.etAccount)
         val etPassword = findViewById<EditText>(R.id.etPassword)
@@ -121,6 +124,16 @@ class MainActivity : AppCompatActivity() {
         val passwordEncoded = try { URLEncoder.encode(etPassword.text.toString(), "UTF-8") } catch (_: Exception) { etPassword.text.toString() }
         val previewUrl = NetUtil.buildLoginUrl(accountEncoded, passwordEncoded, ipv4, ipv6Encoded)
         tvResult.text = "当前 URL 预览:\n$previewUrl"
+    }
+
+    override fun onCreateOptionsMenu(menu: Menu): Boolean {
+        menuInflater.inflate(R.menu.menu_author, menu)
+        return true
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        if (item.itemId == R.id.menu_author) return true
+        return super.onOptionsItemSelected(item)
     }
 
     override fun onDestroy() {

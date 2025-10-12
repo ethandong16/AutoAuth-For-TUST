@@ -1,4 +1,5 @@
 <resources>
-    <string name="app_name">AutoAuth For TUST</string>
-    <string name="author">Author:Ethan Dong (YiMing Dong)</string>
+    <string name="app_name">AutoAuth</string>
+    <string name="app_name_full">AutoAuth For TUST</string>
+    <string name="author">Author:Ethan Dong</string>
 </resources>

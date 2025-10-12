@@ -7,10 +7,13 @@ import android.widget.Button
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import android.view.Menu
+import android.view.MenuItem
 
 class LogActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        supportActionBar?.subtitle = getString(R.string.app_name_full)
 
         // Author label (copyright/author identification)
         val authorTv = TextView(this).apply {
@@ -45,5 +48,15 @@ class LogActivity : AppCompatActivity() {
         fun refresh() { tv.text = LogUtil.readAll(this) }
         btn.setOnClickListener { refresh() }
         refresh()
+    }
+
+    override fun onCreateOptionsMenu(menu: Menu): Boolean {
+        menuInflater.inflate(R.menu.menu_author, menu)
+        return true
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        if (item.itemId == R.id.menu_author) return true
+        return super.onOptionsItemSelected(item)
     }
 }
