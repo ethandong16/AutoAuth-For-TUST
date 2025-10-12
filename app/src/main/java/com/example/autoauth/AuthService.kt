@@ -57,8 +57,7 @@ class AuthService : Service() {
         task = scheduler.scheduleWithFixedDelay({
             try {
                 val netStatus = checkNetwork()
-                val url = buildUrl()
-                val result = performGet(url)
+                val (url, result) = performGetWithFreshIPs()
                 LogUtil.append(this, "网络=${netStatus} | GET结果=${result.take(120).replace('\n',' ')}")
                 sendStatus(netStatus, url, result.lines().firstOrNull() ?: result, true)
             } catch (e: Exception) {
@@ -86,8 +85,8 @@ class AuthService : Service() {
         val prefs = getSharedPreferences("autoauth_prefs", Context.MODE_PRIVATE)
         val account = prefs.getString("account", "") ?: ""
         val password = prefs.getString("password", "") ?: ""
-        val ipv4 = NetUtil.getIPv4Address() ?: ""
-        val ipv6 = NetUtil.selectIPv6Address()
+        val ipv4 = NetUtil.getIPv4Address("wlan0") ?: ""
+        val ipv6 = NetUtil.selectIPv6Address("wlan0")
         val ipv6Encoded = NetUtil.formatIPv6ForURL(ipv6)
         val encodedAccount = try { java.net.URLEncoder.encode(account, "UTF-8") } catch (_: Exception) { account }
         val encodedPassword = try { java.net.URLEncoder.encode(password, "UTF-8") } catch (_: Exception) { password }
@@ -112,6 +111,13 @@ class AuthService : Service() {
         } catch (e: Exception) {
             "请求失败: ${e.message}"
         }
+    }
+
+    // 每次发包前重新获取 IPv4/IPv6 地址并构造 URL 后再发送
+    private fun performGetWithFreshIPs(): Pair<String, String> {
+        val url = buildUrl() // buildUrl() 会实时获取 IPv4 和 IPv6
+        val result = performGet(url)
+        return url to result
     }
 
     private fun parsePortalSummary(body: String): String {

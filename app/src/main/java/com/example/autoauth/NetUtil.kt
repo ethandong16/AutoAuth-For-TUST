@@ -3,17 +3,36 @@ package com.example.autoauth
 import java.net.*
 
 object NetUtil {
-    fun getIPv4Address(): String? {
+    fun getIPv4Address(preferredInterface: String? = null): String? {
         try {
-            val interfaces = NetworkInterface.getNetworkInterfaces() ?: return null
-            while (interfaces.hasMoreElements()) {
-                val intf = interfaces.nextElement()
-                if (!intf.isUp || intf.isLoopback) continue
-                val addrs = intf.inetAddresses
-                while (addrs.hasMoreElements()) {
-                    val addr = addrs.nextElement()
-                    if (addr is Inet4Address && !addr.isLoopbackAddress) {
-                        return addr.hostAddress
+            val ifaces = NetworkInterface.getNetworkInterfaces() ?: return null
+            // Try preferred interface first
+            if (preferredInterface != null) {
+                var preferred: NetworkInterface? = null
+                val en = ifaces
+                while (en.hasMoreElements()) {
+                    val itf = en.nextElement()
+                    if (itf.name.equals(preferredInterface, ignoreCase = true)) { preferred = itf; break }
+                }
+                if (preferred != null && preferred.isUp && !preferred.isLoopback) {
+                    val addrs = preferred.inetAddresses
+                    while (addrs.hasMoreElements()) {
+                        val addr = addrs.nextElement()
+                        if (addr is Inet4Address && !addr.isLoopbackAddress) return addr.hostAddress
+                    }
+                }
+            }
+            // If a preferred interface was requested and not found, don't fall back to others
+            if (preferredInterface == null) {
+                // Fallback: any interface
+                val interfaces = NetworkInterface.getNetworkInterfaces() ?: return null
+                while (interfaces.hasMoreElements()) {
+                    val intf = interfaces.nextElement()
+                    if (!intf.isUp || intf.isLoopback) continue
+                    val addrs = intf.inetAddresses
+                    while (addrs.hasMoreElements()) {
+                        val addr = addrs.nextElement()
+                        if (addr is Inet4Address && !addr.isLoopbackAddress) return addr.hostAddress
                     }
                 }
             }
@@ -21,13 +40,13 @@ object NetUtil {
         return null
     }
 
-    fun selectIPv6Address(): Inet6Address? {
+    fun selectIPv6Address(preferredInterface: String? = null): Inet6Address? {
         var linkLocalFallback: Inet6Address? = null
         try {
-            val interfaces = NetworkInterface.getNetworkInterfaces() ?: return null
-            while (interfaces.hasMoreElements()) {
-                val intf = interfaces.nextElement()
-                if (!intf.isUp || intf.isLoopback) continue
+            val allIfaces = NetworkInterface.getNetworkInterfaces() ?: return null
+            // Helper to scan one interface
+            fun scanInterface(intf: NetworkInterface): Inet6Address? {
+                if (!intf.isUp || intf.isLoopback) return null
                 val addrs = intf.inetAddresses
                 while (addrs.hasMoreElements()) {
                     val addr = addrs.nextElement()
@@ -41,6 +60,27 @@ object NetUtil {
                             return addr
                         }
                     }
+                }
+                return null
+            }
+            // Try preferred interface first
+            if (preferredInterface != null) {
+                var preferred: NetworkInterface? = null
+                val en = allIfaces
+                while (en.hasMoreElements()) {
+                    val itf = en.nextElement()
+                    if (itf.name.equals(preferredInterface, ignoreCase = true)) { preferred = itf; break }
+                }
+                val found = preferred?.let { scanInterface(it) }
+                if (found != null) return found
+            }
+            if (preferredInterface == null) {
+                // Fallback: scan all
+                val interfaces = NetworkInterface.getNetworkInterfaces() ?: return linkLocalFallback
+                while (interfaces.hasMoreElements()) {
+                    val intf = interfaces.nextElement()
+                    val found = scanInterface(intf)
+                    if (found != null) return found
                 }
             }
         } catch (_: Exception) { }
@@ -84,4 +124,3 @@ object NetUtil {
         return sb.toString()
     }
 }
-

@@ -2,8 +2,13 @@ package com.example.autoauth
 
 import android.Manifest
 import android.content.*
+import android.net.ConnectivityManager
+import android.net.LinkProperties
+import android.net.Network
 import android.os.Build
 import android.os.Bundle
+import android.view.Menu
+import android.view.MenuItem
 import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
@@ -12,12 +17,11 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import java.net.URLEncoder
-import android.view.Menu
-import android.view.MenuItem
 
 class MainActivity : AppCompatActivity() {
 
     private var statusReceiver: BroadcastReceiver? = null
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -35,25 +39,49 @@ class MainActivity : AppCompatActivity() {
         val btnViewLogs = findViewById<Button>(R.id.btnViewLogs)
         val switchBoot = findViewById<android.widget.Switch>(R.id.switchBoot)
 
-        // Show current IPs
-        val ipv4 = NetUtil.getIPv4Address() ?: ""
-        val selectedIPv6 = NetUtil.selectIPv6Address()
-        val ipv6Raw = selectedIPv6?.hostAddress?.substringBefore('%') ?: ""
-        val ipv6Encoded = NetUtil.formatIPv6ForURL(selectedIPv6)
-        tvIPv4.text = "IPv4: $ipv4"
-        tvIPv6.text = "IPv6: $ipv6Raw (编码后: $ipv6Encoded)"
-
         // Load saved credentials
         val prefs = getSharedPreferences("autoauth_prefs", Context.MODE_PRIVATE)
         etAccount.setText(prefs.getString("account", ""))
         etPassword.setText(prefs.getString("password", ""))
 
+        // UI helpers
+        fun updateIpsAndPreview() {
+            val ipv4Now = NetUtil.getIPv4Address("wlan0") ?: ""
+            val ipv6Sel = NetUtil.selectIPv6Address("wlan0")
+            val ipv6RawNow = ipv6Sel?.hostAddress?.substringBefore('%') ?: ""
+            val ipv6EncNow = NetUtil.formatIPv6ForURL(ipv6Sel)
+            tvIPv4.text = "IPv4: $ipv4Now"
+            tvIPv6.text = "IPv6: $ipv6RawNow (编码: $ipv6EncNow)"
+
+            val accountEncodedNow = try { URLEncoder.encode(etAccount.text.toString(), "UTF-8") } catch (_: Exception) { etAccount.text.toString() }
+            val passwordEncodedNow = try { URLEncoder.encode(etPassword.text.toString(), "UTF-8") } catch (_: Exception) { etPassword.text.toString() }
+            val previewUrlNow = NetUtil.buildLoginUrl(accountEncodedNow, passwordEncodedNow, ipv4Now, ipv6EncNow)
+            tvResult.text = "当前 URL 预览:\n$previewUrlNow"
+        }
+
+        fun checkNetworkImmediate() {
+            Thread {
+                val status = try {
+                    val url = java.net.URL("https://www.baidu.com/")
+                    val conn = (url.openConnection() as javax.net.ssl.HttpsURLConnection).apply {
+                        connectTimeout = 5000
+                        readTimeout = 5000
+                        instanceFollowRedirects = false
+                        requestMethod = "GET"
+                    }
+                    val code = conn.responseCode
+                    if (code == 200) "已联网" else "未联网"
+                } catch (_: Exception) { "未联网" }
+                runOnUiThread { tvNetStatus.text = "网络状态: $status" }
+            }.start()
+        }
+
         // Auto-save on change
         val watcher = { key: String, value: String ->
             prefs.edit().putString(key, value).apply()
         }
-        etAccount.addTextChangedListener(SimpleTextWatcher { watcher("account", it) })
-        etPassword.addTextChangedListener(SimpleTextWatcher { watcher("password", it) })
+        etAccount.addTextChangedListener(SimpleTextWatcher { watcher("account", it); updateIpsAndPreview() })
+        etPassword.addTextChangedListener(SimpleTextWatcher { watcher("password", it); updateIpsAndPreview() })
 
         // Start service
         btnStart.setOnClickListener {
@@ -103,7 +131,7 @@ class MainActivity : AppCompatActivity() {
                 val running = intent.getBooleanExtra("serviceRunning", false)
                 tvNetStatus.text = "网络状态: ${net ?: "未知"}"
                 tvResult.text = buildString {
-                    if (!url.isNullOrEmpty()) append("最近请求: \n").append(url).append('\n')
+                    if (!url.isNullOrEmpty()) append("最近请求:\n").append(url).append('\n')
                     if (!summary.isNullOrEmpty()) append("结果: \n").append(summary)
                 }
                 prefs.edit().putBoolean("service_running", running).apply()
@@ -119,11 +147,18 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, if (isChecked) "已开启开机自启" else "已关闭开机自启", Toast.LENGTH_SHORT).show()
         }
 
-        // Immediately build and show current URL (for reference)
-        val accountEncoded = try { URLEncoder.encode(etAccount.text.toString(), "UTF-8") } catch (_: Exception) { etAccount.text.toString() }
-        val passwordEncoded = try { URLEncoder.encode(etPassword.text.toString(), "UTF-8") } catch (_: Exception) { etPassword.text.toString() }
-        val previewUrl = NetUtil.buildLoginUrl(accountEncoded, passwordEncoded, ipv4, ipv6Encoded)
-        tvResult.text = "当前 URL 预览:\n$previewUrl"
+        // Listen for network changes to refresh IP/URL in real time
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        networkCallback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) { runOnUiThread { updateIpsAndPreview() } }
+            override fun onLost(network: Network) { runOnUiThread { updateIpsAndPreview() } }
+            override fun onLinkPropertiesChanged(network: Network, linkProperties: LinkProperties) { runOnUiThread { updateIpsAndPreview() } }
+        }
+        try { cm.registerDefaultNetworkCallback(networkCallback!!) } catch (_: Exception) {}
+
+        // Initial refresh and immediate network check
+        updateIpsAndPreview()
+        checkNetworkImmediate()
     }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
@@ -141,6 +176,11 @@ class MainActivity : AppCompatActivity() {
         if (statusReceiver != null) {
             unregisterReceiver(statusReceiver)
             statusReceiver = null
+        }
+        if (networkCallback != null) {
+            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            try { cm.unregisterNetworkCallback(networkCallback!!) } catch (_: Exception) {}
+            networkCallback = null
         }
     }
 }
