@@ -3,12 +3,10 @@ package com.example.autoauth
 import android.app.*
 import android.content.Context
 import android.content.Intent
-import android.os.Build
-import android.os.IBinder
+import android.os.*
 import androidx.core.app.NotificationCompat
 import java.net.HttpURLConnection
 import javax.net.ssl.HttpsURLConnection
-import java.net.Inet6Address
 import java.net.URL
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.ScheduledThreadPoolExecutor
@@ -18,17 +16,32 @@ class AuthService : Service() {
     private val channelId = "autoauth_channel"
     private val scheduler = ScheduledThreadPoolExecutor(1)
     private var task: ScheduledFuture<*>? = null
+    private var startedForeground = false
 
     override fun onCreate() {
         super.onCreate()
         createChannel()
-        val notif = buildNotification("AutoAuth 运行中")
-        startForeground(1, notif)
+
+        // ✅ 延迟进入前台模式，避免 ForegroundServiceStartNotAllowedException
+        Handler(Looper.getMainLooper()).postDelayed({
+            if (!startedForeground) {
+                val notif = buildNotification("AutoAuth 运行中")
+                try {
+                    startForeground(1, notif)
+                    startedForeground = true
+                    LogUtil.append(this, "前台服务已启动（延迟）")
+                } catch (e: Exception) {
+                    LogUtil.append(this, "前台启动失败: ${e.message}")
+                }
+            }
+        }, 8000) // 延迟 8 秒，可视情况调整
+
+        // 立即启动核心逻辑
         schedule()
         getSharedPreferences("autoauth_prefs", Context.MODE_PRIVATE)
             .edit().putBoolean("service_running", true).apply()
         sendStatus("未知", null, null, true)
-        LogUtil.append(this, "服务已启动")
+        LogUtil.append(this, "服务已创建并开始调度")
     }
 
     override fun onDestroy() {
@@ -53,12 +66,14 @@ class AuthService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    // ================= 网络任务逻辑 =================
+
     private fun schedule() {
         task = scheduler.scheduleWithFixedDelay({
             try {
                 val netStatus = checkNetwork()
                 val (url, result) = performGetWithFreshIPs()
-                LogUtil.append(this, "网络=${netStatus} | GET结果=${result.take(120).replace('\n',' ')}")
+                LogUtil.append(this, "网络=$netStatus | GET结果=${result.take(120).replace('\n',' ')}")
                 sendStatus(netStatus, url, result.lines().firstOrNull() ?: result, true)
             } catch (e: Exception) {
                 LogUtil.append(this, "任务异常: ${e.message}")
@@ -76,8 +91,7 @@ class AuthService : Service() {
                 instanceFollowRedirects = false
                 requestMethod = "GET"
             }
-            val code = conn.responseCode
-            if (code == 200) "已联网" else "未联网"
+            if (conn.responseCode == 200) "已联网" else "未联网"
         } catch (_: Exception) { "未联网" }
     }
 
@@ -113,16 +127,14 @@ class AuthService : Service() {
         }
     }
 
-    // 每次发包前重新获取 IPv4/IPv6 地址并构造 URL 后再发送
     private fun performGetWithFreshIPs(): Pair<String, String> {
-        val url = buildUrl() // buildUrl() 会实时获取 IPv4 和 IPv6
+        val url = buildUrl()
         val result = performGet(url)
         return url to result
     }
 
     private fun parsePortalSummary(body: String): String {
         if (body.isBlank()) return ""
-        // Try to extract JSON inside callback dr1005(...)
         val start = body.indexOf('{')
         val end = body.lastIndexOf('}')
         if (start >= 0 && end > start) {
@@ -138,17 +150,18 @@ class AuthService : Service() {
                         append("msg=").append(msg)
                     }
                 }
-            } catch (_: Exception) { /* ignore */ }
+            } catch (_: Exception) {}
         }
-        // Fallback: heuristics
         return when {
-            body.contains("success", ignoreCase = true) -> "登录成功"
-            body.contains("ok", ignoreCase = true) -> "登录成功(可能)"
-            body.contains("error", ignoreCase = true) -> "登录失败"
-            body.contains("fail", ignoreCase = true) -> "登录失败"
+            body.contains("success", true) -> "登录成功"
+            body.contains("ok", true) -> "登录成功(可能)"
+            body.contains("error", true) -> "登录失败"
+            body.contains("fail", true) -> "登录失败"
             else -> ""
         }
     }
+
+    // ================= 通知与状态广播 =================
 
     private fun createChannel() {
         if (Build.VERSION.SDK_INT >= 26) {
@@ -168,7 +181,6 @@ class AuthService : Service() {
             .setSmallIcon(android.R.drawable.stat_notify_sync)
             .setContentIntent(pi)
             .setOngoing(true)
-            // Android 14/15 can crash if action icon is 0
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "停止", stopPi)
             .build()
     }

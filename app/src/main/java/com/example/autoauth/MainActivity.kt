@@ -182,9 +182,9 @@ class MainActivity : AppCompatActivity() {
             try { cm.unregisterNetworkCallback(networkCallback!!) } catch (_: Exception) {}
             networkCallback = null
         }
-    }
-}
 
+}
+}
 // SimpleTextWatcher
 private class SimpleTextWatcher(val onChanged: (String) -> Unit) : android.text.TextWatcher {
     override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
