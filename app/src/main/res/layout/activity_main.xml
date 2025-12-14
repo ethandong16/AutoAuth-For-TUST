@@ -47,6 +47,34 @@
             android:inputType="textPassword" />
 
         <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="自定义 IPv4 (Custom IPv4)"
+            android:textSize="16sp" />
+
+        <EditText
+            android:id="@+id/etCustomIPv4"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="请输入IPv4 (留空即为空)"
+            android:inputType="text" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="自定义 IPv6 (Custom IPv6)"
+            android:textSize="16sp" />
+
+        <EditText
+            android:id="@+id/etCustomIPv6"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="请输入IPv6 (留空即为空)"
+            android:inputType="text" />
+
+        <TextView
             android:id="@+id/tvIPv4"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -105,8 +133,6 @@
             android:layout_marginTop="16dp"
             android:textSize="14sp"
             android:textColor="#333333" />
-
-        
 
     </LinearLayout>
 </ScrollView>

@@ -30,6 +30,8 @@ class MainActivity : AppCompatActivity() {
 
         val etAccount = findViewById<EditText>(R.id.etAccount)
         val etPassword = findViewById<EditText>(R.id.etPassword)
+        val etCustomIPv4 = findViewById<EditText>(R.id.etCustomIPv4)
+        val etCustomIPv6 = findViewById<EditText>(R.id.etCustomIPv6)
         val tvIPv4 = findViewById<TextView>(R.id.tvIPv4)
         val tvIPv6 = findViewById<TextView>(R.id.tvIPv6)
         val tvNetStatus = findViewById<TextView>(R.id.tvNetStatus)
@@ -43,19 +45,30 @@ class MainActivity : AppCompatActivity() {
         val prefs = getSharedPreferences("autoauth_prefs", Context.MODE_PRIVATE)
         etAccount.setText(prefs.getString("account", ""))
         etPassword.setText(prefs.getString("password", ""))
+        etCustomIPv4.setText(prefs.getString("custom_ipv4", "10.59.14.49"))
+        etCustomIPv6.setText(prefs.getString("custom_ipv6", ""))
 
         // UI helpers
         fun updateIpsAndPreview() {
-            val ipv4Now = NetUtil.getIPv4Address("wlan0") ?: ""
-            val ipv6Sel = NetUtil.selectIPv6Address("wlan0")
-            val ipv6RawNow = ipv6Sel?.hostAddress?.substringBefore('%') ?: ""
-            val ipv6EncNow = NetUtil.formatIPv6ForURL(ipv6Sel)
-            tvIPv4.text = "IPv4: $ipv4Now"
-            tvIPv6.text = "IPv6: $ipv6RawNow (编码: $ipv6EncNow)"
+            // Determine IPv4
+            val customIPv4 = etCustomIPv4.text.toString().trim()
+            val ipv4Now = customIPv4 // 用户想要留空就留空
+
+            // Determine IPv6
+            val customIPv6 = etCustomIPv6.text.toString().trim()
+            
+            val ipv6Display: String
+            val ipv6Encoded: String
+
+            ipv6Display = customIPv6
+            ipv6Encoded = try { URLEncoder.encode(customIPv6, "UTF-8") } catch (_: Exception) { customIPv6 }
+
+            tvIPv4.text = "IPv4: $ipv4Now" + (if (customIPv4.isNotEmpty()) " (自定义)" else " (空)")
+            tvIPv6.text = "IPv6: $ipv6Display (编码: $ipv6Encoded)" + (if (customIPv6.isNotEmpty()) " (自定义)" else " (空)")
 
             val accountEncodedNow = try { URLEncoder.encode(etAccount.text.toString(), "UTF-8") } catch (_: Exception) { etAccount.text.toString() }
             val passwordEncodedNow = try { URLEncoder.encode(etPassword.text.toString(), "UTF-8") } catch (_: Exception) { etPassword.text.toString() }
-            val previewUrlNow = NetUtil.buildLoginUrl(accountEncodedNow, passwordEncodedNow, ipv4Now, ipv6EncNow)
+            val previewUrlNow = NetUtil.buildLoginUrl(accountEncodedNow, passwordEncodedNow, ipv4Now, ipv6Encoded)
             tvResult.text = "当前 URL 预览:\n$previewUrlNow"
         }
 
@@ -82,6 +95,8 @@ class MainActivity : AppCompatActivity() {
         }
         etAccount.addTextChangedListener(SimpleTextWatcher { watcher("account", it); updateIpsAndPreview() })
         etPassword.addTextChangedListener(SimpleTextWatcher { watcher("password", it); updateIpsAndPreview() })
+        etCustomIPv4.addTextChangedListener(SimpleTextWatcher { watcher("custom_ipv4", it); updateIpsAndPreview() })
+        etCustomIPv6.addTextChangedListener(SimpleTextWatcher { watcher("custom_ipv6", it); updateIpsAndPreview() })
 
         // Start service
         btnStart.setOnClickListener {
@@ -93,7 +108,12 @@ class MainActivity : AppCompatActivity() {
             }
 
             // Save once more
-            prefs.edit().putString("account", account).putString("password", password).apply()
+            prefs.edit()
+                .putString("account", account)
+                .putString("password", password)
+                .putString("custom_ipv4", etCustomIPv4.text.toString().trim())
+                .putString("custom_ipv6", etCustomIPv6.text.toString().trim())
+                .apply()
 
             // Request notification permission on Android 13+
             if (Build.VERSION.SDK_INT >= 33) {
@@ -182,9 +202,9 @@ class MainActivity : AppCompatActivity() {
             try { cm.unregisterNetworkCallback(networkCallback!!) } catch (_: Exception) {}
             networkCallback = null
         }
+    }
+}
 
-}
-}
 // SimpleTextWatcher
 private class SimpleTextWatcher(val onChanged: (String) -> Unit) : android.text.TextWatcher {
     override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
