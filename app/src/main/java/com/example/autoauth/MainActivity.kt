@@ -52,7 +52,7 @@ class MainActivity : AppCompatActivity() {
         fun updateIpsAndPreview() {
             // Determine IPv4
             val customIPv4 = etCustomIPv4.text.toString().trim()
-            val ipv4Now = customIPv4 // 用户想要留空就留空
+            val ipv4Now = customIPv4 
 
             // Determine IPv6
             val customIPv6 = etCustomIPv6.text.toString().trim()
@@ -115,11 +115,12 @@ class MainActivity : AppCompatActivity() {
                 .putString("custom_ipv6", etCustomIPv6.text.toString().trim())
                 .apply()
 
-            // Request notification permission on Android 13+
+            // Request notification permission on Android 13+ (SDK 33)
+            // Using string literal to be compatible with SDK 31 compilation
             if (Build.VERSION.SDK_INT >= 33) {
-                if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                if (ContextCompat.checkSelfPermission(this, "android.permission.POST_NOTIFICATIONS")
                     != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                    ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1001)
+                    ActivityCompat.requestPermissions(this, arrayOf("android.permission.POST_NOTIFICATIONS"), 1001)
                     return@setOnClickListener
                 }
             }
@@ -157,8 +158,10 @@ class MainActivity : AppCompatActivity() {
                 prefs.edit().putBoolean("service_running", running).apply()
             }
         }
-        // Android 14+ (targetSdk >= 34) requires specifying export state
-        registerReceiver(statusReceiver, statusFilter, Context.RECEIVER_NOT_EXPORTED)
+        
+        // Use ContextCompat to handle RECEIVER_NOT_EXPORTED compatibility (Safe for SDK 31 compilation)
+        // RECEIVER_NOT_EXPORTED value is 4, managed by ContextCompat for older versions if supported or ignored
+        ContextCompat.registerReceiver(this, statusReceiver, statusFilter, ContextCompat.RECEIVER_NOT_EXPORTED)
 
         // Boot auto-start toggle
         switchBoot.isChecked = prefs.getBoolean("boot_autostart", true)

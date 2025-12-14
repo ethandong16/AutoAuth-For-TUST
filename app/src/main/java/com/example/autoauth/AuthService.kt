@@ -22,7 +22,7 @@ class AuthService : Service() {
         super.onCreate()
         createChannel()
 
-        // ✅ 延迟进入前台模式，避免 ForegroundServiceStartNotAllowedException
+        // 延迟进入前台模式，避免 ForegroundServiceStartNotAllowedException (Android 12+)
         Handler(Looper.getMainLooper()).postDelayed({
             if (!startedForeground) {
                 val notif = buildNotification("AutoAuth 运行中")
@@ -34,7 +34,7 @@ class AuthService : Service() {
                     LogUtil.append(this, "前台启动失败: ${e.message}")
                 }
             }
-        }, 8000) // 延迟 8 秒，可视情况调整
+        }, 8000)
 
         // 立即启动核心逻辑
         schedule()
@@ -99,56 +99,24 @@ class AuthService : Service() {
         val prefs = getSharedPreferences("autoauth_prefs", Context.MODE_PRIVATE)
         val account = prefs.getString("account", "") ?: ""
         val password = prefs.getString("password", "") ?: ""
-        val customIPv4 = prefs.getString("custom_ipv4", "") // 可能为空
-        val customIPv6 = prefs.getString("custom_ipv6", "") // 可能为空
+        val customIPv4 = prefs.getString("custom_ipv4", "")
+        val customIPv6 = prefs.getString("custom_ipv6", "")
 
         val ipv4 = if (customIPv4 != null) {
-            // 如果用户动过输入框，使用输入框的值（哪怕是空字符串）
             customIPv4
         } else {
-            // 如果没有保存过（首次运行等），回退到自动获取
              NetUtil.getIPv4Address("wlan0") ?: ""
         }
 
         val ipv6Encoded = if (customIPv6 != null) {
-            // 用户输入了值（包括空字符串），则直接使用该值并编码
             try { java.net.URLEncoder.encode(customIPv6, "UTF-8") } catch (_: Exception) { customIPv6 }
         } else {
-             // 没有保存过，自动获取
              NetUtil.formatIPv6ForURL(NetUtil.selectIPv6Address("wlan0"))
-        }
-        
-        // 注意：上面逻辑稍微修正一下以完全符合“留空就留空”。
-        // 实际上 prefs.getString 如果没存过会返回 default。
-        // MainActivity里已经设置了默认值 "10.59.14.49" 和 ""。
-        // 所以这里只要取出来直接用即可。如果是空字符串，就是空字符串，不要去自动获取。
-        
-        // 修正逻辑：只有当它真的是 null 的时候才去自动获取（理论上经过 MainActivity 保存后不会是 null，但为了健壮性）
-        // 但用户的要求是“允许自定义...并且允许留空”。如果用户把输入框清空了，那就是空字符串。
-        // 用户说“不要自动获取”，意味着如果输入框是空的，URL参数里就该是空的。
-        
-        // 重新梳理：
-        // 1. 如果 custom_ipv4 是 ""，那么 ipv4 就是 ""。
-        // 2. 如果 custom_ipv4 是 "1.2.3.4"，那么 ipv4 就是 "1.2.3.4"。
-        // 只有一种情况可能需要自动获取：用户从来没运行过UI，Service直接起来了（例如开机自启）。
-        // 但MainActivity里保存了默认值。
-        // 如果用户清空了输入框，prefs里就是""。此时不应该自动获取。
-        
-        val finalIPv4 = if (customIPv4 == null) {
-             NetUtil.getIPv4Address("wlan0") ?: ""
-        } else {
-             customIPv4
-        }
-
-        val finalIPv6Encoded = if (customIPv6 == null) {
-             NetUtil.formatIPv6ForURL(NetUtil.selectIPv6Address("wlan0"))
-        } else {
-             try { java.net.URLEncoder.encode(customIPv6, "UTF-8") } catch (_: Exception) { customIPv6 }
         }
 
         val encodedAccount = try { java.net.URLEncoder.encode(account, "UTF-8") } catch (_: Exception) { account }
         val encodedPassword = try { java.net.URLEncoder.encode(password, "UTF-8") } catch (_: Exception) { password }
-        return NetUtil.buildLoginUrl(encodedAccount, encodedPassword, finalIPv4, finalIPv6Encoded)
+        return NetUtil.buildLoginUrl(encodedAccount, encodedPassword, ipv4, ipv6Encoded)
     }
 
     private fun performGet(urlStr: String): String {
